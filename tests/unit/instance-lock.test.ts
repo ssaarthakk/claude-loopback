@@ -156,22 +156,43 @@ describe("acquireInstanceLock", { timeout: 20_000 }, () => {
   );
 
   it.runIf(named)(
-    "recovers when another program squats the current lock name (e.g. seen in a pipe listing)",
+    "refuses to start when another program squats the current lock name",
     async () => {
       const root = workRoot();
       await (await acquireInstanceLock(root)).release(); // creates the salt
-      const salt = readFileSync(`${path.resolve(root)}.lock-salt`, "utf8").trim();
-      // A squatter accepts connections but can't answer the challenge without the salt.
+      const saltFile = `${path.resolve(root)}.lock-salt`;
+      const salt = readFileSync(saltFile, "utf8").trim();
+      // A squatter (the name shows in pipe and socket listings) accepts connections but can't
+      // answer the challenge without the salt.
       const squatter = createServer((socket) => socket.on("data", () => socket.end("nope")));
       await new Promise<void>((resolve) => squatter.listen(lockName(root, salt), resolve));
       try {
-        const lock = await acquireInstanceLock(root);
-        // The genuine holder is still recognized afterwards.
-        await refused(acquireInstanceLock(root));
-        await lock.release();
+        // Moving to a fresh name instead could put a simultaneous starter on a name of its own:
+        // two instances for one work root. The user is told which file to delete for a new name,
+        // and to stop every instance first: a deletion while one runs has the same effect.
+        const message = (await refused(acquireInstanceLock(root))).message;
+        expect(message).toContain(saltFile);
+        expect(message).toContain("stop every claude-loopback instance");
+        expect(readFileSync(saltFile, "utf8").trim()).toBe(salt);
       } finally {
         await new Promise<void>((resolve) => squatter.close(() => resolve()));
       }
+    },
+  );
+
+  it.runIf(named)(
+    "retries when the holder hangs up without answering (a pipe closing behind its dead owner)",
+    async () => {
+      const root = workRoot();
+      await (await acquireInstanceLock(root)).release();
+      const salt = readFileSync(`${path.resolve(root)}.lock-salt`, "utf8").trim();
+      // On Windows a dead owner's pipe can still accept a connection and then drop it.
+      const closing = createServer((socket) => {
+        socket.destroy();
+        closing.close();
+      });
+      await new Promise<void>((resolve) => closing.listen(lockName(root, salt), resolve));
+      await (await acquireInstanceLock(root)).release();
     },
   );
 

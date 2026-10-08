@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, readFile, realpath, rename, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, realpath, writeFile } from "node:fs/promises";
 import { connect, createServer, type Server } from "node:net";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -13,8 +13,6 @@ const DARWIN = process.platform === "darwin";
 const O_EXLOCK = 0x20;
 const BUSY_RETRIES = 5;
 const BUSY_RETRY_MS = 250;
-// A squatted name is replaced by a fresh one; more than this means something is badly wrong.
-const MAX_SALT_ROTATIONS = 3;
 const CHALLENGE_BYTES = 32;
 const CHALLENGE_TIMEOUT_MS = 2000;
 const BUSY_ANSWER_ATTEMPTS = 2;
@@ -55,20 +53,6 @@ async function readSalt(workRoot: string): Promise<string> {
     }
     await delay(SALT_READ_RETRY_MS);
   }
-}
-
-/**
- * Replaces a salt whose pipe name another program has taken, unless another starter already did:
- * the file is checked first and re-read after, so simultaneous starters end up on one salt.
- */
-async function rotateSalt(workRoot: string, used: string): Promise<string> {
-  const file = saltFile(workRoot);
-  if ((await readFile(file, "utf8")).trim() === used) {
-    const temp = `${file}.${randomBytes(4).toString("hex")}.tmp`;
-    await writeFile(temp, randomBytes(32).toString("hex"), { flag: "wx", mode: 0o600 });
-    await rename(temp, file);
-  }
-  return readSalt(workRoot);
 }
 
 /** One pipe name per work root and salt; Windows paths are case-insensitive, so the key is too. */
@@ -175,8 +159,8 @@ type Holder = "genuine" | "impostor" | "busy" | "gone";
 
 /**
  * Who holds the pipe: "genuine" (another claude-loopback with the same salt), "impostor" (a
- * program that answers wrongly or hangs up without answering), "busy" (no answer in time: maybe
- * a stalled instance, so never treated as an impostor) or "gone" (the pipe vanished, e.g. its
+ * program that answers wrongly), "busy" (no answer in time: maybe a stalled instance, so never
+ * treated as an impostor) or "gone" (the pipe vanished or hung up without a word, e.g. its
  * owner just exited).
  */
 function challenge(name: string, salt: string): Promise<Holder> {
@@ -184,17 +168,17 @@ function challenge(name: string, salt: string): Promise<Holder> {
     const nonce = randomBytes(CHALLENGE_BYTES);
     const expected = answer(salt, nonce);
     let received = Buffer.alloc(0);
-    let connected = false;
     const socket = connect(name);
     const finish = (verdict: Holder) => {
       socket.destroy();
       resolve(verdict);
     };
+    // A Windows pipe closing behind its dead owner can accept the connection and then drop it.
+    // Calling that an impostor would refuse a start that a retry lets through, so only a wrong
+    // answer is one.
+    const hungUp = () => finish(received.length > 0 ? "impostor" : "gone");
     socket.setTimeout(CHALLENGE_TIMEOUT_MS, () => finish("busy"));
-    socket.on("connect", () => {
-      connected = true;
-      socket.write(nonce);
-    });
+    socket.on("connect", () => socket.write(nonce));
     socket.on("data", (chunk: Buffer) => {
       received = Buffer.concat([received, chunk]);
       if (received.length >= expected.length) {
@@ -202,8 +186,8 @@ function challenge(name: string, salt: string): Promise<Holder> {
         finish(timingSafeEqual(reply, expected) ? "genuine" : "impostor");
       }
     });
-    socket.on("end", () => finish("impostor"));
-    socket.on("error", () => finish(connected ? "impostor" : "gone"));
+    socket.on("end", hungUp);
+    socket.on("error", hungUp);
   });
 }
 
@@ -212,18 +196,18 @@ function challenge(name: string, salt: string): Promise<Holder> {
  * active work dirs. The lock is a listening named pipe (an abstract unix socket on Linux), so
  * the kernel guarantees a single owner (no check-then-create race) and frees it when the process
  * dies, however it dies, so there are no stale locks or PID-reuse problems. When the name is
- * taken, a challenge tells another claude-loopback (refuse to start) from a squatter (switch to
- * a fresh name). macOS has no abstract namespace, and a socket file would outlive a dead holder
- * with no safe way to tell it from a stalled one, so there the lock is a kernel file lock (see
- * lockFile), which needs neither a name nor a challenge. Abstract names are per network
- * namespace: two instances in separate namespaces that share a home directory (some container
- * setups) do not see each other.
+ * taken, a challenge tells another claude-loopback from a squatter; both mean refusing to start,
+ * the squatter with the salt file named: deleting it, once every instance for the work root is
+ * stopped, gives the lock a new name. macOS has no abstract namespace, and a socket file would
+ * outlive a dead holder with no safe way to tell it from a stalled one, so there the lock is a
+ * kernel file lock (see lockFile), which needs neither a name nor a challenge. Abstract names
+ * are per network namespace: two instances in separate namespaces that share a home directory
+ * (some container setups) do not see each other.
  */
 export async function acquireInstanceLock(workRoot: string): Promise<InstanceLock> {
   const root = WIN32 ? workRoot : await canonicalRoot(workRoot);
   if (DARWIN) return lockFile(root);
-  let salt = await readSalt(root);
-  let rotations = 0;
+  const salt = await readSalt(root);
   for (let attempt = 1; ; attempt++) {
     const name = WIN32 ? pipeName(root, salt) : abstractName(salt);
     const server = lockServer(salt);
@@ -244,10 +228,14 @@ export async function acquireInstanceLock(workRoot: string): Promise<InstanceLoc
           `Another claude-loopback instance is already running for ${path.resolve(root)}`,
         );
       }
-      if (holder === "impostor" && rotations < MAX_SALT_ROTATIONS) {
-        rotations++;
-        salt = await rotateSalt(root, salt);
-        continue;
+      // Moving to a fresh salt here used to be automatic. Two starters that both found the name
+      // squatted could each move to a salt of their own and both start, so the user does it.
+      if (holder === "impostor") {
+        throw new StartupError(
+          `The instance lock name for ${path.resolve(root)} is held by a program that failed ` +
+            "the lock's challenge; stop every claude-loopback instance for this work root " +
+            `before deleting ${saltFile(root)} for a new name, then retry`,
+        );
       }
       // No answer twice in a row: maybe a stalled instance. Starting anyway could delete its
       // work dirs, so refuse.
