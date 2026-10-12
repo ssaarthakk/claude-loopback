@@ -26,13 +26,19 @@ const SALT_READ_RETRIES = 20;
 const SALT_READ_RETRY_MS = 25;
 
 const saltFile = (workRoot: string) => `${path.resolve(workRoot)}.lock-salt`;
+/** How the user gets the lock a new name once a squatter holds the current one. */
+const newNameAdvice = (workRoot: string) =>
+  "stop every claude-loopback instance for this work root before deleting " +
+  `${saltFile(workRoot)} for a new name, then retry`;
 
 /**
  * A random value kept beside the work root (`<workRoot>.lock-salt`, in the same per-user private
  * folder, and not inside it, so the work root holds only work dirs). Pipe names (and abstract
  * socket names) are machine-wide, so a name derived from the path alone could be created first
  * by another local user to block startup. With the salt, only processes that can read that
- * folder know the name, and only they can answer the lock's challenge. The file is owner-only
+ * folder know the name, and only they can answer the lock's challenge. The name still shows in
+ * pipe and socket listings while an instance holds it, so a local user who saw it can squat it
+ * once the instance stops and block startup until the salt file is deleted. The file is owner-only
  * (0600, where modes apply): on Linux the folder may be a shared temp dir, and the salt is the
  * lock's one secret.
  */
@@ -233,8 +239,7 @@ export async function acquireInstanceLock(workRoot: string): Promise<InstanceLoc
       if (holder === "impostor") {
         throw new StartupError(
           `The instance lock name for ${path.resolve(root)} is held by a program that failed ` +
-            "the lock's challenge; stop every claude-loopback instance for this work root " +
-            `before deleting ${saltFile(root)} for a new name, then retry`,
+            `the lock's challenge; ${newNameAdvice(root)}`,
         );
       }
       // No answer twice in a row: maybe a stalled instance. Starting anyway could delete its
@@ -245,10 +250,12 @@ export async function acquireInstanceLock(workRoot: string): Promise<InstanceLoc
             "but is not responding; stop it (or the program holding its lock) and retry",
         );
       }
-      // A pipe outlives its dead owner for a moment while Windows closes the handles.
+      // A pipe outlives its dead owner for a moment while Windows closes the handles. Still held
+      // after the retries means a program that keeps hanging up without answering: a squatter.
       if (attempt >= BUSY_RETRIES) {
         throw new StartupError(
-          `Could not take the instance lock for ${path.resolve(root)}; another program may be holding it`,
+          `Could not take the instance lock for ${path.resolve(root)}; another program may be ` +
+            `holding it: ${newNameAdvice(root)}`,
         );
       }
       await delay(BUSY_RETRY_MS);

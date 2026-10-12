@@ -185,14 +185,43 @@ describe("acquireInstanceLock", { timeout: 20_000 }, () => {
     async () => {
       const root = workRoot();
       await (await acquireInstanceLock(root)).release();
-      const salt = readFileSync(`${path.resolve(root)}.lock-salt`, "utf8").trim();
+      const saltFile = `${path.resolve(root)}.lock-salt`;
+      const salt = readFileSync(saltFile, "utf8").trim();
+      let connections = 0;
       // On Windows a dead owner's pipe can still accept a connection and then drop it.
       const closing = createServer((socket) => {
+        connections++;
         socket.destroy();
         closing.close();
       });
       await new Promise<void>((resolve) => closing.listen(lockName(root, salt), resolve));
+      try {
+        await (await acquireInstanceLock(root)).release();
+        expect(connections).toBe(1);
+        // Same name, so the start came from a retry, not from moving to a fresh salt.
+        expect(readFileSync(saltFile, "utf8").trim()).toBe(salt);
+      } finally {
+        closing.close();
+      }
+    },
+  );
+
+  it.runIf(named)(
+    "names the salt file when the holder keeps hanging up without answering",
+    async () => {
+      const root = workRoot();
       await (await acquireInstanceLock(root)).release();
+      const saltFile = `${path.resolve(root)}.lock-salt`;
+      const salt = readFileSync(saltFile, "utf8").trim();
+      const squatter = createServer((socket) => socket.destroy());
+      await new Promise<void>((resolve) => squatter.listen(lockName(root, salt), resolve));
+      try {
+        const message = (await refused(acquireInstanceLock(root))).message;
+        expect(message).toContain(saltFile);
+        expect(message).toContain("stop every claude-loopback instance");
+      } finally {
+        await new Promise<void>((resolve) => squatter.close(() => resolve()));
+      }
     },
   );
 
