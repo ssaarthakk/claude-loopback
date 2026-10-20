@@ -12,11 +12,15 @@ import {
 } from "./http/schemas.ts";
 import { DEFAULT_HEARTBEAT_MS } from "./http/sse.ts";
 
+/** The shell the examples are written for: PowerShell on Windows, bash or zsh elsewhere. */
+export type ExampleShell = "powershell" | "sh";
+
 /** What the `docs` command shows. */
 export interface DocsInfo {
   readonly version: string;
   /** Base URL of the server, from the user's settings. */
   readonly url: string;
+  readonly shell: ExampleShell;
   /** The settings file in use, if any. */
   readonly settingsFile?: string;
 }
@@ -130,25 +134,47 @@ function errors(style: Style): string[] {
   ];
 }
 
-function examples(url: string, style: Style): string[] {
-  const comment = (text: string) => style("dim", `  # ${text}`);
+const comment = (style: Style, text: string) => style("dim", `  # ${text}`);
+
+function powershellExamples(url: string, style: Style): string[] {
   return [
-    comment("Load your token (don't type or paste it: shell history keeps what you type)"),
+    comment(style, "Load your token (don't type or paste it: shell history keeps what you type)"),
     "  $env:LOOPBACK_TOKEN = (claude-loopback token)",
     '  $headers = @{ Authorization = "Bearer $env:LOOPBACK_TOKEN" }',
     "",
-    comment("Check Claude Code is found and logged in"),
+    comment(style, "Check Claude Code is found and logged in"),
     `  Invoke-RestMethod ${url}/ready -Headers $headers`,
     "",
-    comment("Run a prompt and wait for the answer"),
+    comment(style, "Run a prompt and wait for the answer"),
     '  $body = @{ prompt = "Reply with exactly the word: pong" } | ConvertTo-Json',
     `  $reply = Invoke-RestMethod ${url}/v1/prompt -Method Post -Headers $headers \``,
     "    -ContentType application/json -Body $body",
     "  $reply.text",
     "",
-    comment("Stream the answer as it arrives (PowerShell 7.3 or newer)"),
+    comment(style, "Stream the answer as it arrives (PowerShell 7.3 or newer)"),
     `  curl.exe -N ${url}/v1/prompt/stream \``,
     '    -H "Authorization: Bearer $env:LOOPBACK_TOKEN" -H "Content-Type: application/json" `',
+    `    -d '{"prompt": "Write a haiku about pipes"}'`,
+  ];
+}
+
+function shExamples(url: string, style: Style): string[] {
+  const auth = '-H "Authorization: Bearer $LOOPBACK_TOKEN"';
+  return [
+    comment(style, "Load your token (don't type or paste it: shell history keeps what you type)"),
+    '  export LOOPBACK_TOKEN="$(claude-loopback token)"',
+    "",
+    comment(style, "Check Claude Code is found and logged in"),
+    `  curl ${url}/ready ${auth}`,
+    "",
+    comment(style, "Run a prompt and wait for the answer"),
+    `  curl ${url}/v1/prompt \\`,
+    `    ${auth} -H "Content-Type: application/json" \\`,
+    `    -d '{"prompt": "Reply with exactly the word: pong"}'`,
+    "",
+    comment(style, "Stream the answer as it arrives"),
+    `  curl -N ${url}/v1/prompt/stream \\`,
+    `    ${auth} -H "Content-Type: application/json" \\`,
     `    -d '{"prompt": "Write a haiku about pipes"}'`,
   ];
 }
@@ -182,8 +208,8 @@ export function formatDocs(info: DocsInfo, style: Style): string {
     ...streamEvents(style),
     ...heading("ERRORS", '{ "error": { "code", "message", "requestId" } }'),
     ...errors(style),
-    ...heading("EXAMPLES", "PowerShell"),
-    ...examples(info.url, style),
+    ...heading("EXAMPLES", info.shell === "powershell" ? "PowerShell" : "bash or zsh"),
+    ...(info.shell === "powershell" ? powershellExamples : shExamples)(info.url, style),
     ...heading("MORE"),
     row(
       "Full spec",

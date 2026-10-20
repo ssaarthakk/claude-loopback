@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // The `claude-loopback` command installed by npm. Settings live in a per-user file
-// (%APPDATA%\claude-loopback\config.env), never in the current folder, so running it inside
-// some other project can't pick up that project's .env.
+// (%APPDATA%\claude-loopback\config.env on Windows, ~/.config/claude-loopback/config.env
+// elsewhere), never in the current folder, so running it inside some other project can't pick
+// up that project's .env.
 import { existsSync, readFileSync } from "node:fs";
 import { styleText } from "node:util";
 import type { Style } from "./banner.ts";
@@ -15,6 +16,11 @@ import { packageVersion } from "./version.ts";
 type Format = Parameters<typeof styleText>[0];
 
 const MIN_NODE_MAJOR = 24;
+const WIN32 = process.platform === "win32";
+/** How this platform's shell loads the token for a script: PowerShell, else bash or zsh. */
+const TOKEN_HINT = WIN32
+  ? "$env:LOOPBACK_TOKEN = (claude-loopback token)"
+  : 'export LOOPBACK_TOKEN="$(claude-loopback token)"';
 
 const file = (() => {
   try {
@@ -30,7 +36,7 @@ const usage = `Usage: claude-loopback [command]
 Commands:
   start    Start the server (the default). Creates your settings on first run.
   setup    Create your settings if needed and check this machine (Node, Claude Code, login)
-  token    Print your token, e.g. $env:LOOPBACK_TOKEN = (claude-loopback token)
+  token    Print your token, e.g. ${TOKEN_HINT}
   config   Print where your settings file is (edit it to change settings)
   docs     Print a quick API reference: routes, fields, errors and examples
 
@@ -117,7 +123,15 @@ switch (command) {
     const style: Style = (format, text) =>
       styleText(format as Format, text, { stream: process.stdout });
     console.log(
-      formatDocs({ version: packageVersion(), url: docsUrl(settings), settingsFile: file }, style),
+      formatDocs(
+        {
+          version: packageVersion(),
+          url: docsUrl(settings),
+          shell: WIN32 ? "powershell" : "sh",
+          settingsFile: file,
+        },
+        style,
+      ),
     );
     break;
   }

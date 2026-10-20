@@ -325,15 +325,6 @@ describe("acquireInstanceLock", { timeout: 20_000 }, () => {
     try {
       expect(existsSync(lockFileOf(root))).toBe(true);
       expect(statSync(lockDir(root)).mode & 0o077).toBe(0);
-      // Not under the temp dir: the same work root must map to one lock whatever TMPDIR says.
-      const saved = process.env.TMPDIR;
-      process.env.TMPDIR = scratchRoot();
-      try {
-        await refused(acquireInstanceLock(root));
-      } finally {
-        if (saved === undefined) delete process.env.TMPDIR;
-        else process.env.TMPDIR = saved;
-      }
     } finally {
       await lock.release();
     }

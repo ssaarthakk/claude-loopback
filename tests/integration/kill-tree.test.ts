@@ -44,7 +44,7 @@ async function grandchildOf(child: ReturnType<typeof spawnFake>["child"]): Promi
 }
 
 describe("killTree", () => {
-  it("kills a process and its detached grandchildren", async () => {
+  it("kills a process and its grandchildren", async () => {
     const { child, pid } = spawnFake("grandchild");
     const grandchildPid = await grandchildOf(child);
     expect(isAlive(grandchildPid)).toBe(true);

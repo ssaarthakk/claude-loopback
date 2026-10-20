@@ -17,9 +17,9 @@ prompts through the owner's own Claude Code login. In scope, for example:
 - A request making Claude Code run with more tools, settings or permissions than configured.
 - Leaking the token, prompts or file paths through responses or logs.
 - Claude Code processes or temporary folders left behind after a run.
-- Another account on the same PC reading the token or interfering with the server.
+- Another account on the same machine reading the token or interfering with the server.
 
-Out of scope: malware already running as the owner's Windows user, and risks the owner opts into
+Out of scope: malware already running as the owner's own account, and risks the owner opts into
 by enabling tools (see "Security" in the README).
 
 ## Supported versions

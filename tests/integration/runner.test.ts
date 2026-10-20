@@ -107,7 +107,7 @@ describe("process runner", () => {
   );
 
   it(
-    "kills the process and its detached grandchildren when the signal aborts",
+    "kills the process and its grandchildren when the signal aborts",
     async () => {
       const { runner } = makeRunner();
       const controller = new AbortController();

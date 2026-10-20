@@ -7,6 +7,10 @@ import { scratchRoot } from "../helpers/process.ts";
 import { ROOT } from "../helpers/server.ts";
 
 const win32 = process.platform === "win32";
+/** How the help and the docs tell the user to load the token, in this platform's shell. */
+const TOKEN_HINT = win32
+  ? "$env:LOOPBACK_TOKEN = (claude-loopback token)"
+  : 'export LOOPBACK_TOKEN="$(claude-loopback token)"';
 
 const CLI = path.join(ROOT, "src", "cli.ts");
 const VERSION = (
@@ -143,7 +147,7 @@ describe("claude-loopback (the npm command)", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("POST  /v1/prompt ");
     expect(result.stdout).toContain("http://127.0.0.1:7337/v1/prompt");
-    expect(result.stdout).toContain("$env:LOOPBACK_TOKEN = (claude-loopback token)");
+    expect(result.stdout).toContain(TOKEN_HINT);
     expect(result.stdout).toContain(configFile);
     // Piped, so no colors.
     expect(result.stdout).not.toContain("\u001b[");
@@ -187,6 +191,7 @@ describe("claude-loopback (the npm command)", () => {
     for (const command of ["start", "setup", "token", "config", "docs"]) {
       expect(result.stdout).toContain(command);
     }
+    expect(result.stdout).toContain(TOKEN_HINT);
   });
 
   it("rejects an unknown command with usage and exit code 1, creating nothing", () => {

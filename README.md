@@ -25,14 +25,14 @@ your script ──HTTP──▶ claude-loopback (127.0.0.1) ──▶ claude -p 
 
 ## Requirements
 
-- **Windows 10 or 11.** Windows is the only supported platform for now.
+- **Windows 10 or 11, macOS, or Linux.** The tests run on all three in CI.
 - **[Node.js](https://nodejs.org) 24 or newer.**
 - **[Claude Code](https://claude.com/claude-code) 2.1.259 or newer**, logged in. Run `claude`
   once and type `/login`.
 
 ## Install
 
-```powershell
+```
 npm install -g claude-loopback
 claude-loopback setup     # creates your settings with a secret token and checks your machine
 ```
@@ -43,13 +43,15 @@ tells you up front if anything is missing.)
 
 Don't want to install anything? `npx claude-loopback` runs the latest version directly.
 
-Your settings and token live in a file only your Windows account can read:
-`%APPDATA%\claude-loopback\config.env` (`claude-loopback config` prints the exact path). Keep the
-token private: anyone who has it can use your Claude subscription through the server.
+Your settings and token live in a file only your account can read:
+`%APPDATA%\claude-loopback\config.env` on Windows, `~/.config/claude-loopback/config.env` on macOS
+and Linux (under `$XDG_CONFIG_HOME` when that is set). `claude-loopback config` prints the exact
+path. Keep the token private: anyone who has it can use your Claude subscription through the
+server.
 
 ## Run
 
-```powershell
+```
 claude-loopback
 ```
 
@@ -73,7 +75,7 @@ use it.
 
 ## Check it's working
 
-In a second PowerShell window:
+In a second terminal. PowerShell (7.3 or newer, for `curl.exe`):
 
 ```powershell
 # Load your token (don't type or paste it: shell history keeps what you type)
@@ -86,13 +88,26 @@ curl.exe http://127.0.0.1:7337/v1/prompt `
   -d '{"prompt": "Reply with exactly the word: pong"}'
 ```
 
+macOS or Linux (bash, zsh):
+
+```sh
+# Load your token (don't type or paste it: shell history keeps what you type)
+export LOOPBACK_TOKEN="$(claude-loopback token)"
+
+curl http://127.0.0.1:7337/health
+curl http://127.0.0.1:7337/ready -H "Authorization: Bearer $LOOPBACK_TOKEN"
+curl http://127.0.0.1:7337/v1/prompt \
+  -H "Authorization: Bearer $LOOPBACK_TOKEN" -H "Content-Type: application/json" \
+  -d '{"prompt": "Reply with exactly the word: pong"}'
+```
+
 What to expect:
 - `/health` returns `{"status":"ok"}`.
 - `/ready` returns `"ready":true`.
 - The last command returns JSON with `"text":"pong"`.
 
-The `curl` examples need PowerShell 7.3 or newer. Always use `127.0.0.1`, not `localhost`:
-Windows may resolve `localhost` to `::1`, where the server isn't listening.
+`claude-loopback docs` prints the same examples for your shell. Always use `127.0.0.1`, not
+`localhost`: some systems resolve `localhost` to `::1`, where the server isn't listening.
 
 ## The API
 
@@ -263,7 +278,7 @@ setting stops the server with a clear message.
 |---|---|---|
 | `LOOPBACK_TOKEN` | *(set by setup)* | **Required.** The secret every request must send (at least 43 random characters). |
 | `LOOPBACK_PORT` | `7337` | Port on `127.0.0.1`. |
-| `LOOPBACK_CLAUDE_PATH` | found on PATH | Full path to `claude.exe`, if it isn't on PATH. |
+| `LOOPBACK_CLAUDE_PATH` | found on PATH | Full path to `claude.exe` (Windows) or the `claude` binary, if it isn't on PATH. |
 | `LOOPBACK_MAX_CONCURRENCY` | `2` | Prompts running at the same time. |
 | `LOOPBACK_QUEUE_SIZE` | `10` | Prompts that may wait for a free slot. |
 | `LOOPBACK_QUEUE_TIMEOUT_MS` | `60000` | Longest wait for a slot. |
@@ -285,12 +300,14 @@ network.
 
 ## Updating
 
-```powershell
+```
 npm install -g claude-loopback@latest
 ```
 
-Then restart `claude-loopback`. Your settings and token are kept. If you update Claude Code itself,
-run `claude-loopback setup` again to re-check it.
+Then restart `claude-loopback`. Your settings and token are kept. After updating Claude Code
+itself, run `claude-loopback setup` again to re-check it, and restart the server: it resolves
+`claude` to the real file once at startup, and on macOS and Linux an update can replace that file
+with a new version.
 
 To uninstall: `npm uninstall -g claude-loopback`, then delete the folder that
 `claude-loopback config` showed.
@@ -299,10 +316,12 @@ To uninstall: `npm uninstall -g claude-loopback`, then delete the folder that
 
 | You see | Fix |
 |---|---|
-| `'claude-loopback' is not recognized` | Open a new terminal after installing. If it persists, check that the folder `npm prefix -g` prints is on your PATH. |
-| `npm error EBADPLATFORM` | Only Windows is supported for now. |
-| `claude.exe was not found on PATH` | Install Claude Code, or set `LOOPBACK_CLAUDE_PATH` in your settings file. |
-| `Only a claude.cmd/.bat shim is on PATH` | Set `LOOPBACK_CLAUDE_PATH` to the real `claude.exe`. |
+| `'claude-loopback' is not recognized`, `command not found` | Open a new terminal after installing. If it persists, check that the folder `npm prefix -g` prints (its `bin` subfolder on macOS and Linux) is on your PATH. |
+| `claude.exe was not found on PATH`, `claude was not found on PATH` | Install Claude Code, or set `LOOPBACK_CLAUDE_PATH` in your settings file. |
+| `Only a claude.cmd/.bat shim is on PATH` | Windows: set `LOOPBACK_CLAUDE_PATH` to the real `claude.exe`. |
+| `could not restrict who can read …`, `could not limit who can read …` | macOS and Linux: the folder holding your settings must be yours and private. Run the `chmod` command `claude-loopback setup` prints. |
+| `… must be a private directory (mode 0700) owned by you` | macOS and Linux: `chmod 700` the folder named (by default `~/.cache/claude-loopback`, which holds the work folder). |
+| `… must have no access control entries` | macOS: `chmod -N` the folder named. |
 | `Claude CLI … is older than the minimum supported 2.1.259` | Run `claude update`. |
 | `Claude CLI could not be run` | Reinstall Claude Code, or check `LOOPBACK_CLAUDE_PATH`. |
 | `Another claude-loopback instance is already running` | It's already running in another window; use that one or stop it. |
@@ -322,10 +341,15 @@ What claude-loopback protects against:
 - **Access without the token:** requests that do work need the token. It's compared in constant
   time, only its hash is kept in memory, and it must be at least 43 random characters (256 bits),
   so it can't be guessed.
-- **Other accounts on the same PC:** the settings file holding the token is written so that only
-  your Windows account can read it, even in a folder that every account can open (like one made
-  at the root of `C:\`). When running from a clone, setup also warns if the project is outside
-  your user folder, where other accounts might be able to change its code.
+- **Other accounts on the same machine:** the settings file holding the token is written so that
+  only your account can read it. Windows: through the file's own access rules, so it stays
+  private even in a folder that every account can open (like one made at the root of `C:\`).
+  macOS and Linux: mode `0600`, in a folder that must be yours and private (`0700`, as setup
+  creates it); on macOS the file's access control entries are removed too, since they survive
+  `chmod`, and a folder that has any is refused. Runs happen in your cache folder, never under
+  `/tmp`, and the folder holding them must be private as well. When running from a clone, setup
+  also warns if the project is outside your user folder, where other accounts might be able to
+  change its code.
 - **Requests widening their own permissions:** tools, model and time limits are checked against
   your settings, and values are passed to Claude Code so they can't be read as extra
   command-line flags.
@@ -343,19 +367,31 @@ What claude-loopback protects against:
   `LOOPBACK_LOG_PROMPTS`.
 
 What it can't protect against:
-- **Malware running as your own Windows user.** It can read your settings file (and so the token), or your
-  Claude login, directly.
+- **Malware running as your own user account.** It can read your settings file (and so the
+  token), or your Claude login, directly.
 - **Risks you opt into by enabling tools.** With `WebFetch`/`WebSearch` on, text inside an
   attachment could make Claude fetch a hostile URL. Enable tools only for content you trust.
 - **`systemPrompt` and `jsonSchema` visibility.** They are visible to other users of the same
-  PC in process listings. Put anything secret in `prompt` instead.
+  machine in process listings. Put anything secret in `prompt` instead.
 - **Commands started by an enabled `Bash`/`PowerShell` tool.** One started in the background can
-  outlive its run, and keep running if the server is killed outright (e.g. from Task Manager).
-  With tools off (the default) there are no such commands. A normal stop, a second Ctrl+C and
-  crashes all clean up the Claude Code runs themselves.
+  outlive its run, and keep running if the server is killed outright (from Task Manager, or with
+  `kill -9`). With tools off (the default) there are no such commands. A normal stop, a second
+  Ctrl+C and crashes all clean up the Claude Code runs themselves.
+- **The server being killed outright on macOS or Linux** (`kill -9`; not Ctrl+C, `kill` or a
+  crash). Nothing is left to stop a run in progress, so it finishes on its own; its work folder
+  is removed at the next start. On Windows a job object ends the runs with the server, however
+  it dies.
+- **Two instances in different Linux network namespaces.** The one-instance check on Linux uses
+  a name that exists per network namespace. Two instances that share a home folder but not a
+  namespace (some container setups) don't see each other, and each would delete the other's
+  work folders at startup.
+- **Access control lists macOS can't read.** The macOS folder check treats an empty `ls -le`
+  listing as "no entries", which is also what `ls` prints for a list it couldn't read. On your
+  startup disk it can always read them; on volumes without ACL support (FAT, exFAT, some network
+  shares) there are none to enforce.
 - **Another account taking the port while the server is stopped.** Any program can listen on
-  `127.0.0.1:7337` when nothing else is, and your scripts would then send it your token. On a PC
-  you share with people you don't trust, run the server whenever your scripts do.
+  `127.0.0.1:7337` when nothing else is, and your scripts would then send it your token. On a
+  machine you share with people you don't trust, run the server whenever your scripts do.
 
 ## How it works
 
@@ -364,7 +400,7 @@ sequenceDiagram
     participant S as Your script
     participant L as claude-loopback (127.0.0.1)
     participant Q as Queue
-    participant C as claude.exe
+    participant C as claude
     S->>L: POST /v1/prompt + token
     L->>L: Host · Origin · token · rate limit · size · schema checks
     L->>Q: check tools/model/timeout, wait for a free slot
@@ -382,15 +418,14 @@ sequenceDiagram
 - **Shared usage limit:** all requests share your Claude subscription's usage limits.
 - **No conversations:** every request stands alone.
 - **Text attachments only:** no images yet.
-- **Windows only.**
 
 ## Contributing
 
 To run from source you also need [Git](https://git-scm.com) and pnpm (`corepack enable pnpm`).
-Clone under your user folder (e.g. `C:\Users\you\code`), not a folder at the root of `C:\`,
-which other accounts on the PC can usually change.
+Clone under your user folder (e.g. `C:\Users\you\code` or `~/code`), not somewhere other accounts
+can change, like a folder at the root of `C:\` or under `/tmp`.
 
-```powershell
+```
 git clone https://github.com/ssaarthakk/claude-loopback.git
 cd claude-loopback
 pnpm install
@@ -400,9 +435,11 @@ pnpm start              # or: pnpm run dev, which restarts on changes
 ```
 
 A clone reads its settings from `.env` in the project folder instead of the per-user settings
-file, and `pnpm start` runs the same server as `claude-loopback`.
+file, and `pnpm start` runs the same server as `claude-loopback`. On macOS and Linux, setup also
+checks that the clone, which then holds your token, is a folder only you can enter, and prints
+the `chmod 700` to run if it isn't.
 
-```powershell
+```
 pnpm run dev            # run from source with auto-restart
 pnpm run check          # lint + typecheck + tests (must pass before every commit)
 pnpm run test:coverage  # tests with the coverage gate CI uses

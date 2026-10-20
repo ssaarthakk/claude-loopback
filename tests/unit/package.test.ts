@@ -34,8 +34,9 @@ describe("package.json (what npm publishes)", () => {
     expect(pkg.files).toEqual(["dist", "!dist/**/*.map", ".env.example", "docs/openapi.json"]);
   });
 
-  it("installs only on Windows with Node 24 or newer", () => {
-    expect(pkg.os).toEqual(["win32"]);
+  it("installs on Windows, macOS and Linux with Node 24 or newer", () => {
+    expect(pkg.os).toBeUndefined();
+    expect(pkg.keywords).toEqual(expect.arrayContaining(["windows", "macos", "linux"]));
     expect(pkg.engines?.node).toBe(">=24");
   });
 

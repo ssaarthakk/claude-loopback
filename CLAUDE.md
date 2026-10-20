@@ -6,8 +6,8 @@ public, never multi-user, not a Messages API clone.
 
 ## Status & workflow
 - Work in small, complete features. Stop for approval at the end of each one.
-- **Platform: Windows only in v1.** macOS/Linux come later, so keep OS-specific code behind a
-  small seam.
+- **Platforms: Windows, macOS and Linux.** Keep OS-specific code behind a small seam (a
+  `process.platform === "win32"` branch with its POSIX sibling beside it).
 
 ## Stack
 Node 24 · TypeScript (strict) · Hono + @hono/node-server · Zod · Vitest · Biome · pnpm
@@ -42,9 +42,10 @@ backend and spawner are injected so every layer is testable alone.
   checks, graceful close). `src/run.ts`: `runServer` (signals, startup errors, banner from
   `src/banner.ts`).
 - Entry points: `src/cli.ts` is the npm `claude-loopback` command (settings in
-  `%APPDATA%\claude-loopback\config.env`); `src/index.ts` is `pnpm start`/`dev` from a clone
-  (`.env`). `src/setup.ts`: setup checks for both; `src/token-file.ts` + `src/file-acl.ts`:
-  token file written readable only by the current user.
+  `%APPDATA%\claude-loopback\config.env`, or `~/.config/claude-loopback/config.env`);
+  `src/index.ts` is `pnpm start`/`dev` from a clone (`.env`). `src/setup.ts`: setup checks for
+  both; `src/token-file.ts` + `src/file-acl.ts`: token file written readable only by the
+  current user.
 - `src/http/`: middleware, schemas (Zod, also the OpenAPI source), routes, SSE, openapi.
 - `src/service/`: prompt service (policy, attachments, run loop, drain), queue.
 - `src/backends/`: `types.ts` + `cli/` (args, env, stream parser, classify, probe).

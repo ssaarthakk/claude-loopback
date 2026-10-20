@@ -4,7 +4,7 @@ import { ERROR_CODES, errorStatus } from "../../src/errors.ts";
 import { buildOpenApiDocument } from "../../src/http/openapi.ts";
 import { promptRequest, promptResponse } from "../../src/http/schemas.ts";
 
-const info: DocsInfo = { version: "0.1.0", url: "http://127.0.0.1:7337" };
+const info: DocsInfo = { version: "0.1.0", url: "http://127.0.0.1:7337", shell: "powershell" };
 
 const plain = (_format: string | string[], text: string) => text;
 const tagged = (format: string | string[], text: string) =>
@@ -94,6 +94,16 @@ describe("formatDocs", () => {
     expect(custom).not.toContain("7337");
   });
 
+  it("builds copy-paste shell examples for macOS and Linux without ever holding a token", () => {
+    const posix = formatDocs({ ...info, url: "http://127.0.0.1:8123", shell: "sh" }, plain);
+    expect(posix).toContain('export LOOPBACK_TOKEN="$(claude-loopback token)"');
+    expect(posix).not.toContain("$env:");
+    expect(posix).not.toContain("Invoke-RestMethod");
+    expect(posix).toContain("http://127.0.0.1:8123/v1/prompt");
+    expect(posix).toContain("http://127.0.0.1:8123/v1/prompt/stream");
+    expect(posix).not.toContain("7337");
+  });
+
   it("shows the settings file only when given", () => {
     expect(text).not.toContain("Settings");
     const file = "C:\\Users\\me\\AppData\\Roaming\\claude-loopback\\config.env";
@@ -103,8 +113,12 @@ describe("formatDocs", () => {
   });
 
   it("fits a 100-column terminal", () => {
-    const wide = lines.filter((line) => line.length > 100);
-    expect(wide).toEqual([]);
+    for (const shell of ["powershell", "sh"] as const) {
+      const wide = formatDocs({ ...info, shell }, plain)
+        .split("\n")
+        .filter((line) => line.length > 100);
+      expect(wide, shell).toEqual([]);
+    }
   });
 
   it("styles headings through the given style and adds no escape codes itself", () => {
